@@ -27,8 +27,6 @@
 #include <numeric>
 #include <cstdint>
 
-
-
 #include <cuda_runtime.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -169,8 +167,6 @@ using sec   = std::chrono::duration<double>;
 
 
 // Cuda Kernels
-
-
 // Convert each bp into 2 bit
 #ifdef USE_CUDA
 // cudaSetDevice(1);
@@ -332,86 +328,7 @@ static void compute_minimizers_on_gpu(const std::string &seq,
 }
 #endif // USE_CUDA
 
-// Cuda Kernels for MinHash
-
-// #define CUDA_CHECK(call) \
-// do { \
-//   cudaError_t err = (call); \
-//   if (err != cudaSuccess) { \
-//     fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
-//     exit(1); \
-//   } \
-// } while(0)
-
-
-// __global__
-// void compute_min_per_trial_kernel(const kmer_t* d_kmers, long long k_begin, long long k_end,
-//                                   const kmer_t* d_Ax, const kmer_t* d_Bx, const kmer_t* d_Px,
-//                                   int no_trials,
-//                                   kmer_t* d_min_val_out, kmer_t* d_corr_kmer_out)
-// {
-//     int trial = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (trial >= no_trials) return;
-
-//     kmer_t best_val = (kmer_t)3074457345618258602ULL;
-//     kmer_t best_kmer = 0;
-
-//     kmer_t A = d_Ax[trial];
-//     kmer_t B = d_Bx[trial];
-//     kmer_t P = d_Px[trial];
-
-//     for (long long kk = k_begin; kk < k_end; ++kk) {
-//         kmer_t kmer = d_kmers[kk];
-//         unsigned __int128 prod = (unsigned __int128)A * (unsigned __int128)kmer;
-//         kmer_t val = (kmer_t)((prod + B) % P);
-//         if (val < best_val) {
-//             best_val = val;
-//             best_kmer = kmer;
-//         }
-//     }
-
-//     d_min_val_out[trial] = best_val;
-//     d_corr_kmer_out[trial] = best_kmer;
-// }
-
-
-
-#include <cuda_runtime.h>
 #include <limits>
-
-struct Window {
-    int start;
-    int end;
-};
-
-__global__ void window_min_kernel_batch(
-    const kmer_t* kmers,
-    const int* pos,
-    const Window* windows_hash,
-    int num_windows,
-    int no_trials,
-    const int* Ax,
-    const int* Bx,
-    const int* Px,
-    kmer_t* out_min_vals
-) {
-    int w = blockIdx.x * blockDim.x + threadIdx.x;
-    if (w >= num_windows) return;
-
-    int start = windows_hash[w].start;
-    int end   = windows_hash[w].end;
-
-    for (int trial = 0; trial < no_trials; ++trial) {
-        kmer_t min_val = (kmer_t)3074457345618258602;
-
-        for (int i = start; i < end; ++i) {
-            kmer_t val = (Ax[trial] * kmers[i] + Bx[trial]) % Px[trial];
-            if (val < min_val) min_val = val;
-        }
-
-        out_min_vals[w * no_trials + trial] = min_val;
-    }
-}
 
 struct BatchedRead {
     int subject_id;
@@ -453,11 +370,7 @@ void window_min_kernel_batch(
         out[wid * no_trials + t] = minv;
     }
 }
-
-
-
-
-
+// Host code and functions
 
 void print_trial_map_stats(
     const std::vector<std::unordered_map<kmer_t, std::vector<int>>>& trial_maps)
@@ -525,7 +438,7 @@ size_t memory_usage_trial_maps(const std::vector<std::unordered_map<kmer_t, std:
 }
 
 
-
+// Min-Hash operation procedure
 void run_batched_min_hash(
     const std::vector<BatchedRead>& batch_reads,
     const std::vector<kmer_t>& batch_kmers,
@@ -535,9 +448,6 @@ void run_batched_min_hash(
     int read_length,
     std::vector<std::unordered_map<kmer_t, std::vector<int>>>& trial_maps
     ) {
-    // --------------------
-    // BUILD WINDOWS
-    // --------------------
     std::vector<Window_batch> windows;
 
     for (int r = 0; r < (int)batch_reads.size(); r++) {
@@ -569,9 +479,7 @@ void run_batched_min_hash(
     int num_windows = windows.size();
     if (num_windows == 0) return;
 
-    // --------------------
     // DEVICE ALLOCATIONS
-    // --------------------
     Window_batch* d_windows;
     kmer_t* d_kmers;
     int* d_pos;
@@ -598,9 +506,7 @@ void run_batched_min_hash(
     cudaMemcpy(d_Bx, Bx, no_trials * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_Px, Px, no_trials * sizeof(int), cudaMemcpyHostToDevice);
 
-    // --------------------
-    // KERNEL LAUNCH
-    // --------------------
+    // kernel launch
     int threads = 256;
     int blocks = (num_windows + threads - 1) / threads;
 
@@ -635,30 +541,16 @@ void run_batched_min_hash(
         kmer_t key = h_out[w * no_trials + t];
         per_read_trial_keys[read_id][t].insert(key);
     }
-}
-for (int r = 0; r < (int)batch_reads.size(); ++r) {
-    int subject_id = batch_reads[r].subject_id;
+    }
+    for (int r = 0; r < (int)batch_reads.size(); ++r) {
+        int subject_id = batch_reads[r].subject_id;
 
-    for (int t = 0; t < no_trials; ++t) {
-        for (const auto& key : per_read_trial_keys[r][t]) {
-            trial_maps[t][key].push_back(subject_id);
+        for (int t = 0; t < no_trials; ++t) {
+            for (const auto& key : per_read_trial_keys[r][t]) {
+                trial_maps[t][key].push_back(subject_id);
+            }
         }
     }
-}
-
-
-    // for (int w = 0; w < num_windows; w++) {
-    //     int read_id = windows[w].read_id;
-    //     int subject_id = batch_reads[read_id].subject_id;
-
-    //     for (int t = 0; t < no_trials; t++) {
-    //         kmer_t val = h_out[w * no_trials + t];
-    //         trial_maps[t][val].push_back(subject_id);
-    //     }
-    // }
-
-
- 
 
 
 
@@ -724,17 +616,9 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
 
     constexpr int BATCH_SIZE = 100;
 
-
-
-
-
-
     std::vector<kmer_t> batch_kmers;
     std::vector<int>    batch_pos;
     std::vector<BatchedRead> batch_reads;
-
-
-
 
     while(p<length) {
 
@@ -1076,8 +960,6 @@ void generate_set_of_subjects (char *read_data, size_t length, int s_index, char
 
     int M_for_individual_processes = 0;
     int n_subjects;
-    // int total_subjects;
-
     // Sliding_window - compute MinHash sketches from minimizer k-mers across subjects, with strand direction 
 
     Sliding_window (read_data, length, &M_for_individual_processes, &n_subjects, minhash_from_set_of_subjects, s_index);
