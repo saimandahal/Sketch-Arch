@@ -188,27 +188,17 @@ __device__ inline ElType char_to_el_dev(char ch) {
 __device__ inline kmer_t kmer_shift_dev(kmer_t kmer_in, ElType el) {
     return (kmer_t)(((kmer_in << 2) | (kmer_t)el) & (kmer_t)KMER_MASK);
 }
-
-__device__ inline kmer_t smer_shift_dev(kmer_t kmer_in, ElType el) {
-    return (kmer_t)(((kmer_in << 2) | (kmer_t)el) & (kmer_t)KMER_MASK);
-}
 #endif
 
 // Kernel for Minimizer per window
 // Each thread handles one window of size w_size
 #ifdef USE_CUDA
-// #define smer_len 11   // s-mer length (fixed)
-// #define KMER_LENGTH 15
 __global__ void compute_minimizer_per_window_kernel(
     const char* seq, int seq_len, int w_size,
     kmer_t* out_min_kmer, int* out_tracker, int* out_pos)
 {
     // Cuda thread Index; one thread handles one window
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    int smer_len = 11;
-    int kmer_len = 15;
-
 
     int max_windows = seq_len - w_size + 1; // max windows = 10000-200 + 1
     if (idx < 0 || idx >= max_windows) return;
@@ -216,67 +206,46 @@ __global__ void compute_minimizer_per_window_kernel(
     const char* window_ptr = seq + idx; 
     // compute minimizer across this window
     kmer_t min_kmer = (kmer_t)3074457345618258602ULL;
-
-    kmer_t min_smer = (kmer_t)3074457345618258602ULL;
-    kmer_t kmer = 0;
-    kmer_t smer = 0;
-
     int tracker = 0;
     int start_pos = 0;
+
+    kmer_t kmer = 0;
     int special_char = 0;
-    
-    for (int i = 0; i < smer_len - 1; ++i) {
+
+    for (int i = 0; i < (int)(KMER_LENGTH - 1); ++i) {
         char ch = window_ptr[i];
-
         if (special_char > 0) special_char--;
-        if (ch == 'N' || ch == 'Y' || ch == 'S' ||
-            ch == 'R' || ch == 'I' || ch == 'E' || ch == 'K') {
-            special_char = smer_len;
+        if (ch == 'N' || ch == 'Y' || ch == 'S' || ch == 'R' || ch == 'I' || ch == 'E' || ch == 'K') {
+            special_char = KMER_LENGTH;
         }
-
         ElType el = char_to_el_dev(ch);
         kmer = kmer_shift_dev(kmer, el);
-        smer = smer_shift_dev(smer, el);
     }
 
-    for (int i = smer_len - 1; i < kmer_len; ++i) {
+    for (int i = (int)KMER_LENGTH - 1; i < w_size; ++i) {
         char ch = window_ptr[i];
-
         if (special_char > 0) special_char--;
-        if (ch == 'N' || ch == 'Y' || ch == 'S' ||
-            ch == 'R' || ch == 'I' || ch == 'E' || ch == 'K') {
-            special_char = smer_len;
+        if (ch == 'N' || ch == 'Y' || ch == 'S' || ch == 'R' || ch == 'I' || ch == 'E' || ch == 'K') {
+            special_char = KMER_LENGTH;
         }
-
         ElType el = char_to_el_dev(ch);
         kmer = kmer_shift_dev(kmer, el);
-        smer = smer_shift_dev(smer, el);
 
         if (special_char <= 0) {
             tracker = 1;
-            if (smer < min_smer) {
-                min_smer = smer;
-                start_pos = i - (smer_len - 1);  // i - 10
+            if (kmer < min_kmer) {
+                min_kmer = kmer;
+                // start_pos = i - (int)KMER_LENGTH;
+                start_pos = i - (int)KMER_LENGTH;
+
             }
         }
     }
 
-    if (start_pos == 0 || start_pos == (kmer_len - smer_len)) {
-        out_min_kmer[idx] = kmer;
-        out_tracker[idx] = tracker;
-        out_pos[idx] = start_pos;
-    } else {
-        out_min_kmer[idx] = 0;
-        out_tracker[idx] = 0;
-        out_pos[idx] = start_pos;
-    }
+    out_min_kmer[idx] = min_kmer;
+    out_tracker[idx] = tracker;
+    out_pos[idx] = start_pos;
 }
-
-
-//     out_min_kmer[idx] = min_kmer;
-//     out_tracker[idx] = tracker;
-//     out_pos[idx] = start_pos;
-// }
 #endif 
 
 #ifdef USE_CUDA
@@ -415,7 +384,7 @@ struct Window {
     int end;
 };
 
-__global__ void window_min_kernel(
+__global__ void window_min_kernel_batch(
     const kmer_t* kmers,
     const int* pos,
     const Window* windows_hash,
@@ -443,6 +412,48 @@ __global__ void window_min_kernel(
         out_min_vals[w * no_trials + trial] = min_val;
     }
 }
+
+struct BatchedRead {
+    int subject_id;
+    int offset_kmer;
+    int offset_pos;
+    int count;
+};
+
+struct Window_batch {
+    int start;
+    int end;
+    int read_id;
+};
+
+__global__
+void window_min_kernel_batch(
+    const kmer_t* kmers,
+    const int* pos,
+    const Window_batch* windows,
+    int num_windows,
+    int no_trials,
+    const int* Ax,
+    const int* Bx,
+    const int* Px,
+    kmer_t* out
+) {
+    int wid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (wid >= num_windows) return;
+
+    Window_batch w = windows[wid];
+
+    for (int t = 0; t < no_trials; t++) {
+        kmer_t minv = 3074457345618258602ULL;
+
+        for (int i = w.start; i < w.end; i++) {
+            kmer_t h = (Ax[t] * kmers[i] + Bx[t]) % Px[t];
+            if (h < minv) minv = h;
+        }
+        out[wid * no_trials + t] = minv;
+    }
+}
+
 
 
 
@@ -485,6 +496,8 @@ void print_trial_map_stats(
     }
 }
 
+
+
 size_t estimate_map_memory(const std::unordered_map<kmer_t, std::vector<int>>& map) {
     size_t total = sizeof(map); // unordered_map object itself
 
@@ -511,49 +524,6 @@ size_t memory_usage_trial_maps(const std::vector<std::unordered_map<kmer_t, std:
     return total;
 }
 
-
-
-
-struct BatchedRead {
-    int subject_id;
-    int offset_kmer;
-    int offset_pos;
-    int count;
-};
-
-struct Window_batch {
-    int start;
-    int end;
-    int read_id;
-};
-
-__global__
-void window_min_kernel_batch(
-    const kmer_t* kmers,
-    const int* pos,
-    const Window_batch* windows,
-    int num_windows,
-    int no_trials,
-    const int* Ax,
-    const int* Bx,
-    const int* Px,
-    kmer_t* out
-) {
-    int wid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (wid >= num_windows) return;
-
-    Window_batch w = windows[wid];
-
-    for (int t = 0; t < no_trials; t++) {
-        kmer_t minv = 3074457345618258602ULL;
-
-        for (int i = w.start; i < w.end; i++) {
-            kmer_t h = (Ax[t] * kmers[i] + Bx[t]) % Px[t];
-            if (h < minv) minv = h;
-        }
-        out[wid * no_trials + t] = minv;
-    }
-}
 
 
 void run_batched_min_hash(
@@ -636,7 +606,6 @@ void run_batched_min_hash(
 
     // std::cout << "Windows: " << num_windows  << " Blocks: " << blocks << "\n";
 
-
     window_min_kernel_batch<<<blocks, threads>>>(
         d_kmers,
         d_pos,
@@ -687,6 +656,16 @@ for (int r = 0; r < (int)batch_reads.size(); ++r) {
     //         trial_maps[t][val].push_back(subject_id);
     //     }
     // }
+
+
+ 
+
+
+
+ 
+
+
+
 
     cudaFree(d_windows);
     cudaFree(d_kmers);
@@ -745,9 +724,16 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
 
     constexpr int BATCH_SIZE = 100;
 
+
+
+
+
+
     std::vector<kmer_t> batch_kmers;
     std::vector<int>    batch_pos;
     std::vector<BatchedRead> batch_reads;
+
+
 
 
     while(p<length) {
@@ -798,120 +784,118 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
         p = seq_start + read_len;
 
         // GPU: compute forward_set, pos_set, forward_set_tracker for the full read 'str'
-#ifdef USE_CUDA
-        auto gstart = Clock::now();
-        compute_minimizers_on_gpu(str, read_len, w_size, forward_set, pos_set, forward_set_tracker);
-        auto gend = Clock::now();
-        forward_time += gend - gstart;
-#else
-
-        auto t1 = Clock::now();
-        for(i=0; !isspace(ptr[p]) && i<w_size-1; i++) {
-      
-            s.push_back(convert_to_char(ptr[p], read_len, total_subjects));
-            str.push_back(ptr[p]);
-            p++;
-            read_len++;
-            
-            
-        }
-        while(p<length && !isspace(ptr[p])) {  
-            s.push_back(convert_to_char(ptr[p], read_len, total_subjects));
-            str.push_back(ptr[p]);
-            //s.push_back(ptr[p]);
-            p++;
-            read_len++;
-            //rev_set.push_back(min_kmer);
-            recalculate_min_kmer(str.substr(read_len - w_size, w_size), &min_kmer, &min_tracker, &min_pos);
-            forward_set.push_back(min_kmer);
-            pos_set.push_back(min_pos);
-            if (min_tracker > 0)
-            {
-                forward_set_tracker.push_back(1);
-            }
-            else
-            {
-                forward_set_tracker.push_back(0);
-            }
-            
-        } 
-
-        auto t2 = Clock::now();
-        forward_time += t2 - t1;
-#endif
-
-        auto t_rev_start = Clock::now();
-        // reverse(s) etc. (same as original):
-        reverse(s.begin(), s.end());
-
         #ifdef USE_CUDA
+                auto gstart = Clock::now();
+                compute_minimizers_on_gpu(str, read_len, w_size, forward_set, pos_set, forward_set_tracker);
+                auto gend = Clock::now();
+                forward_time += gend - gstart;
+        #else
 
-        std::string s_rev = s;
+                auto t1 = Clock::now();
+                for(i=0; !isspace(ptr[p]) && i<w_size-1; i++) {
+            
+                    s.push_back(convert_to_char(ptr[p], read_len, total_subjects));
+                    str.push_back(ptr[p]);
+                    p++;
+                    read_len++;
+                    
+                    
+                }
+                while(p<length && !isspace(ptr[p])) {  
+                    s.push_back(convert_to_char(ptr[p], read_len, total_subjects));
+                    str.push_back(ptr[p]);
+                    //s.push_back(ptr[p]);
+                    p++;
+                    read_len++;
+                    //rev_set.push_back(min_kmer);
+                    recalculate_min_kmer(str.substr(read_len - w_size, w_size), &min_kmer, &min_tracker, &min_pos);
+                    forward_set.push_back(min_kmer);
+                    pos_set.push_back(min_pos);
+                    if (min_tracker > 0)
+                    {
+                        forward_set_tracker.push_back(1);
+                    }
+                    else
+                    {
+                        forward_set_tracker.push_back(0);
+                    }
+                    
+                } 
 
-        std::vector<kmer_t> reverse_set;
-        std::vector<int> reverse_pos;
-        std::vector<int> reverse_tracker;
+                auto t2 = Clock::now();
+                forward_time += t2 - t1;
+        #endif
 
-        compute_minimizers_on_gpu(s_rev, read_len, w_size, reverse_set, reverse_pos, reverse_tracker);
+                auto t_rev_start = Clock::now();
+                // reverse(s) etc. (same as original):
+                reverse(s.begin(), s.end());
 
-        int windows = (read_len >= w_size) ? (read_len - w_size + 1) : 0;
+                #ifdef USE_CUDA
 
-        // std::cout << "Reverse set " << reverse_set.size() << " Window " << windows << w_size << "\n";
+                std::string s_rev = s;
+
+                std::vector<kmer_t> reverse_set;
+                std::vector<int> reverse_pos;
+                std::vector<int> reverse_tracker;
+
+                compute_minimizers_on_gpu(s_rev, read_len, w_size, reverse_set, reverse_pos, reverse_tracker);
+
+                int windows = (read_len >= w_size) ? (read_len - w_size + 1) : 0;
 
 
-        if ((int)reverse_set.size() != windows || (int)forward_set.size() != windows) {
+                if ((int)reverse_set.size() != windows || (int)forward_set.size() != windows) {
 
-            std::cout<<"Yes GPU failed";
-            int length_tracker_local = 0;
-            int itr_local = 0;
-            for(int i=0; i<w_size-1; i++) { length_tracker_local++; }
-            while(length_tracker_local < read_len) {
-                length_tracker_local++;
-                recalculate_min_kmer(s.substr(length_tracker_local - w_size, w_size), &rev_min_kmer, &min_tracker, &min_pos);
+                    std::cout<<"Yes GPU failed";
+                    int length_tracker_local = 0;
+                    int itr_local = 0;
+                    for(int i=0; i<w_size-1; i++) { length_tracker_local++; }
+                    while(length_tracker_local < read_len) {
+                        length_tracker_local++;
+                        recalculate_min_kmer(s.substr(length_tracker_local - w_size, w_size), &rev_min_kmer, &min_tracker, &min_pos);
 
-                if (rev_min_kmer <= forward_set[read_len - w_size - itr_local]) {
-                    if (forward_set_tracker[read_len - w_size - itr_local] == 1) {
-                        if (rev_min_kmer != 3074457345618258602ULL) {
-                            kmer_set.push_back(rev_min_kmer);
-                            kmer_set_pos.push_back(read_len - w_size - itr_local + (w_size - 1) - (min_pos + KMER_LENGTH - 1));
+                        if (rev_min_kmer <= forward_set[read_len - w_size - itr_local]) {
+                            if (forward_set_tracker[read_len - w_size - itr_local] == 1) {
+                                if (rev_min_kmer != 3074457345618258602ULL) {
+                                    kmer_set.push_back(rev_min_kmer);
+                                    kmer_set_pos.push_back(read_len - w_size - itr_local + (w_size - 1) - (min_pos + KMER_LENGTH - 1));
+                                }
+                            }
+                        } else {
+                            if (forward_set_tracker[read_len - w_size - itr_local] == 1) {
+                                kmer_set.push_back(forward_set[read_len - w_size - itr_local]);
+                                kmer_set_pos.push_back(pos_set[read_len - w_size - itr_local] + read_len - w_size - itr_local);
+                            }
                         }
+                        itr_local++;
                     }
                 } else {
-                    if (forward_set_tracker[read_len - w_size - itr_local] == 1) {
-                        kmer_set.push_back(forward_set[read_len - w_size - itr_local]);
-                        kmer_set_pos.push_back(pos_set[read_len - w_size - itr_local] + read_len - w_size - itr_local);
-                    }
-                }
-                itr_local++;
-            }
-        } else {
 
-            for (int itr_idx = 0; itr_idx < windows; ++itr_idx) {
-                int fidx = read_len - w_size - itr_idx; // index into forward_set / pos_set / forward_set_tracker
-                int ridx = itr_idx;                      // index into reverse_set / reverse_pos / reverse_tracker
+                    for (int itr_idx = 0; itr_idx < windows; ++itr_idx) {
+                        int fidx = read_len - w_size - itr_idx; // index into forward_set / pos_set / forward_set_tracker
+                        int ridx = itr_idx;                      // index into reverse_set / reverse_pos / reverse_tracker
 
-                kmer_t rev_k = reverse_set[ridx];
-                int f_tracker = forward_set_tracker[fidx];
-                if (rev_k <= forward_set[fidx]) {
-                    if (f_tracker == 1) {
-                        if (rev_k != (kmer_t)3074457345618258602ULL) {
+                        kmer_t rev_k = reverse_set[ridx];
+                        int f_tracker = forward_set_tracker[fidx];
+                        if (rev_k <= forward_set[fidx]) {
+                            if (f_tracker == 1) {
+                                if (rev_k != (kmer_t)3074457345618258602ULL) {
 
-                            int minpos = reverse_pos[ridx];
-                            int computed_pos = read_len - w_size - itr_idx + (w_size - 1) - (minpos + (int)KMER_LENGTH - 1);
-                            kmer_set.push_back(rev_k);
-                            kmer_set_pos.push_back((kmer_t)computed_pos);
+                                    int minpos = reverse_pos[ridx];
+                                    int computed_pos = read_len - w_size - itr_idx + (w_size - 1) - (minpos + (int)KMER_LENGTH - 1);
+                                    kmer_set.push_back(rev_k);
+                                    kmer_set_pos.push_back((kmer_t)computed_pos);
+                                }
+                            }
+                        } else {
+                            if (f_tracker == 1) {
+                                int computed_pos = pos_set[fidx] + read_len - w_size - itr_idx;
+                                kmer_set.push_back(forward_set[fidx]);
+                                kmer_set_pos.push_back((kmer_t)computed_pos);
+                            }
                         }
                     }
-                } else {
-                    if (f_tracker == 1) {
-                        int computed_pos = pos_set[fidx] + read_len - w_size - itr_idx;
-                        kmer_set.push_back(forward_set[fidx]);
-                        kmer_set_pos.push_back((kmer_t)computed_pos);
-                    }
                 }
-            }
-        }
-#else
+        #else
         // If CUDA not available,  back to original host-side reverse loop
 
         int length_tracker = 0;
@@ -937,17 +921,13 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
             }
             itr++;
         }
-#endif
+    #endif
         auto t_rev_end = Clock::now();
         reverse_time += t_rev_end - t_rev_start;
 
 
         auto t_dist_start = Clock::now();
-        // std::cout <<"Syncmer size: " << kmer_set.size() << "\n";
-
-
-
-        if (read_len >= 1000 && kmer_set.size() > 0) {
+        if (read_len >= read_length && kmer_set.size() > 0) {
             kmer_t prev = kmer_set[0];
             int i;
             for (i = 1; i < (int)kmer_set.size(); i++) {
@@ -959,47 +939,27 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
             }
             set_of_distinct_kmers.push_back(prev);
             set_of_distinct_pos.push_back(kmer_set_pos[i-1]);
-            set_of_distinct_kmers.push_back(prev);
-            set_of_distinct_pos.push_back(kmer_set_pos[i-1]);
-            //printf("Wsize Subject =%d\n", set_of_distinct_kmers.size());
-            kmer_set.clear();
-            kmer_set.shrink_to_fit();
-            kmer_set_pos.clear();
-            kmer_set_pos.shrink_to_fit();
         }
-
-
         for (int reverse = (int)set_of_distinct_pos.size() - 1; reverse >= 0; --reverse) {
             set_of_distinct_pos_rev.push_back(set_of_distinct_pos[reverse]);
             set_of_distinct_kmers_rev.push_back(set_of_distinct_kmers[reverse]);
         }
-
-        // for (int reverse = (int)kmer_set_pos.size() - 1; reverse >= 0; --reverse) {
-        //     set_of_distinct_pos_rev.push_back(kmer_set_pos[reverse]);
-        //     set_of_distinct_kmers_rev.push_back(kmer_set[reverse]);
-        // }
-
-
         kmer_set.clear(); kmer_set.shrink_to_fit();
         kmer_set_pos.clear(); kmer_set_pos.shrink_to_fit();
+        if (max_set_length < (int)set_of_distinct_kmers.size()) max_set_length = (int)set_of_distinct_kmers.size();
+        auto t_dist_end = Clock::now();
+        distinct_time += t_dist_end - t_dist_start;
 
-        // std::cout << "Distinct size: " << set_of_distinct_kmers_rev.size() << "\n";
+        size_t total_mem =
+            sizeof(set_of_distinct_kmers_rev) +
+            set_of_distinct_kmers_rev.capacity() * sizeof(kmer_t);
 
-        // break;
+        total_k_mer = total_k_mer + set_of_distinct_kmers.size();
 
-        // size_t total_mem =
-        //     sizeof(set_of_distinct_kmers_rev) +
-        //     set_of_distinct_kmers_rev.capacity() * sizeof(kmer_t);
-
-        // total_k_mer = total_k_mer + set_of_distinct_kmers.size();
-
-        // if (max_distinct_kmers < (int)set_of_distinct_kmers.size())
-        // {
-        //     max_distinct_kmers = set_of_distinct_kmers.size();
-        // }
-
-
-        // total_k_mer
+        if (max_distinct_kmers < (int)set_of_distinct_kmers.size())
+        {
+            max_distinct_kmers = set_of_distinct_kmers.size();
+        }
 
         BatchedRead br;
         br.subject_id   = total_subjects + s_index;
@@ -1049,6 +1009,16 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
             minhash_time += t2 - t1;
         }
         
+
+
+
+
+
+        // int subject_id = total_subjects + s_index;
+
+        // auto t11 = Clock::now();
+        // hash_populate_time += t11 - t10;
+        
         
         set_of_distinct_kmers.clear();
         set_of_distinct_kmers.shrink_to_fit();
@@ -1068,34 +1038,37 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
         p++; 
         p++;
 
-    //    auto t2 = Clock::now();
-        // minhash_time += t2 - t1;
+       
     }
 
+    if (!batch_reads.empty()) {
+        run_batched_min_hash(
+            batch_reads,
+            batch_kmers,
+            batch_pos,
+            no_trials,
+            Ax, Bx, Px,
+            read_length,
+            trial_maps
+        );
+    }
+
+
     print_trial_map_stats(trial_maps);
-
-
-
 
     size_t mem = memory_usage_trial_maps(trial_maps);
     std::cout << "Memory used by trial_maps = " << mem << " bytes\n";
 
-
-        
     std::cout << "\nTiming \n";
-    // std::cout << count_window;
-
 
     std::cout << "Total minimizers " << total_k_mer << " s\n";
     std::cout << "Total minhashes " << count_window << " \n";
     std::cout << "Maximum  minimizers across read" << max_distinct_kmers << " s\n";
     std::cout << "Maximum  minhashes across read" << max_distinct_kmers << " s\n";
 
-
-
     std::cout << "Forward minimizers (GPU/host): " << forward_time.count() << " s\n";
     std::cout << "Reverse minimizers: " << reverse_time.count() << " s\n";
-    // std::cout << "Distinct minimizers: " << distinct_time.count() << " s\n";
+    std::cout << "Distinct minimizers: " << distinct_time.count() << " s\n";
     std::cout << "MinHash: " << minhash_time.count()  << " s\n\n";
 
     std::cout << "MinHash population: " << hash_populate_time.count()  << " s\n\n";
