@@ -1,8 +1,6 @@
 // Main file
 // Sketch-Arch
 
-// main.cpp (single-process, non-MPI version)
-
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
@@ -98,14 +96,6 @@ int main(int argc, char **argv) {
     generate_set_of_subjects (sdata.read_data, sdata.read_data_size, sdata.start_index, sdata.read_data, sdata.read_data_size, sdata.start_index, sdata.total, &M, &total_subjects);
 
     // int total_number_of_subs_in_p = kmer_sets.size();
-    // kmer_t** Hash_table = new kmer_t*[total_subjects];
-
-    // int total_hash_functions = 150;
-    // for (int i = 0; i < total_subjects; i++) {
-    //     Hash_table[i] = new kmer_t[total_hash_functions];
-    // }
-    // genereate_hash_table(M, total_subjects, Hash_table);
-
 
     double time_l2 = omp_get_wtime();
     std::cout << "Elapsed time (s): " << (time_l2 - time_l1) << std::endl;

@@ -1009,17 +1009,6 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
             minhash_time += t2 - t1;
         }
         
-
-
-
-
-
-        // int subject_id = total_subjects + s_index;
-
-        // auto t11 = Clock::now();
-        // hash_populate_time += t11 - t10;
-        
-        
         set_of_distinct_kmers.clear();
         set_of_distinct_kmers.shrink_to_fit();
         // window_min_sets.clear();
@@ -1090,7 +1079,6 @@ void generate_set_of_subjects (char *read_data, size_t length, int s_index, char
     // int total_subjects;
 
     // Sliding_window - compute MinHash sketches from minimizer k-mers across subjects, with strand direction 
-    auto t1 = Clock::now();
 
     Sliding_window (read_data, length, &M_for_individual_processes, &n_subjects, minhash_from_set_of_subjects, s_index);
 
