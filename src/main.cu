@@ -14,11 +14,10 @@
 #include <algorithm>
 #include <unordered_map>
 #include <numeric>
-#include <omp.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include "JEM.h"
+#include "../includes/JEM.h"
 #include "../includes/timers.h"   // optional: keep if your project uses it
 
 using std::cout;
