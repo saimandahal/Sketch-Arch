@@ -12,9 +12,16 @@ Sketch-Arch, an energy-efficient architecture for real-time mapping of long read
 gcc 8.5
 nvcc 11.7
 
-### Build
+## Build
+1. **Run:**
 
+   ```bash
+   make
 
-### Execute
+## Execute
+1. **Run:**
 
+   ```bash
+   ./script.sh
+   
 
