@@ -6,10 +6,12 @@ Sketch-Arch, an energy-efficient architecture for real-time mapping of long read
 
 </p>
 
+Experimental results show that Sketch-Arch reduces memory footprint by up to 7.4× through sketch-based data reduction.
+
 ## Dependencies
-##
 
 gcc 8.5
+
 nvcc 11.7
 
 ## Build
