@@ -16,7 +16,7 @@
 #include <fstream>
 #include <sstream>
 #include "../includes/JEM.h"
-#include "../includes/timers.h"   // optional: keep if your project uses it
+#include "../includes/timers.h"
 
 using std::cout;
 using std::cerr;
@@ -26,7 +26,7 @@ using std::ifstream;
 using std::ostringstream;
 
 long int MAX_KMER_COUNT = 0;
-int rank = 0, size = 1; // single-process defaults (kept for compatibility)
+int rank = 0, size = 1;
 int coverage = 0;
 
 // Files
@@ -61,7 +61,6 @@ std::string readFileIntoString(const std::string& path) {
     return string((std::istreambuf_iterator<char>(input_file)), std::istreambuf_iterator<char>());
 }
 
-// Safer get_file_size
 long long get_file_size(const std::string &filename) {
     FILE *p_file = fopen(filename.c_str(), "rb");
     if (!p_file) {
@@ -89,13 +88,7 @@ int main(int argc, char **argv) {
     int M = 0;
     int total_subjects = 0;
 
-   //  cout << "Query" << endl;
-   //  input_read_data qdata = perform_input_reading(queryFileName, read_length);
-   //  std::cout << "L (read_length): " << read_length << std::endl;
-
     generate_set_of_subjects (sdata.read_data, sdata.read_data_size, sdata.start_index, sdata.read_data, sdata.read_data_size, sdata.start_index, sdata.total, &M, &total_subjects);
-
-    // int total_number_of_subs_in_p = kmer_sets.size();
 
     double time_l2 = omp_get_wtime();
     std::cout << "Elapsed time (s): " << (time_l2 - time_l1) << std::endl;
@@ -105,10 +98,6 @@ int main(int argc, char **argv) {
         free(sdata.read_data);
         sdata.read_data = nullptr;
     }
-   //  if (qdata.read_data) {
-   //      free(qdata.read_data);
-   //      qdata.read_data = nullptr;
-   //  }
 
     return 0;
 }
