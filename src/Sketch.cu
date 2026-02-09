@@ -370,73 +370,6 @@ void window_min_kernel_batch(
         out[wid * no_trials + t] = minv;
     }
 }
-// Host code and functions
-
-void print_trial_map_stats(
-    const std::vector<std::unordered_map<kmer_t, std::vector<int>>>& trial_maps)
-{
-    for (size_t t = 0; t < trial_maps.size(); ++t)
-    {
-        const auto &mp = trial_maps[t];
-
-        size_t total_keys = mp.size();
-        size_t min_vec = std::numeric_limits<size_t>::max();
-        size_t max_vec = 0;
-        size_t total_subject_count = 0;
-
-        for (const auto &kv : mp)
-        {
-            const std::vector<int> &v = kv.second;
-            size_t sz = v.size();
-
-            total_subject_count += sz;
-
-            if (sz < min_vec) min_vec = sz;
-            if (sz > max_vec) max_vec = sz;
-        }
-
-        if (total_keys == 0)   // handle empty trial
-        {
-            min_vec = 0;
-            max_vec = 0;
-        }
-
-        // std::cout << "Trial " << t << " stats:\n";
-        std::cout << "Trial:" << t << " Keys: " << total_keys <<  "Total subjects" << total_subject_count <<"\n";
-        // std::cout << "  Min subject list size: " << min_vec << "\n";
-        // std::cout << "  Max subject list size: " << max_vec;
-        // std::cout << "  Total subjects across all keys: " << total_subject_count << "\n\n";
-    }
-}
-
-
-
-size_t estimate_map_memory(const std::unordered_map<kmer_t, std::vector<int>>& map) {
-    size_t total = sizeof(map); // unordered_map object itself
-
-    for (const auto& kv : map) {
-        total += sizeof(kv.first);                  // key
-        total += sizeof(kv.second);                 // vector object (3 pointers)
-        total += sizeof(void*);                     // pointer to next node (approximation)
-        total += kv.second.capacity() * sizeof(int); // vector data
-    }
-
-    return total;
-}
-
-// Estimate memory for the vector of maps
-size_t memory_usage_trial_maps(const std::vector<std::unordered_map<kmer_t, std::vector<int>>>& trial_maps) {
-    size_t total = sizeof(trial_maps); // vector object itself
-
-    for (const auto& map : trial_maps) {
-        total += estimate_map_memory(map);
-
-        // std::cout << "Estimated memory for one trial map: " << total << " bytes\n";
-    }
-
-    return total;
-}
-
 
 // Min-Hash operation procedure
 void run_batched_min_hash(
@@ -478,8 +411,8 @@ void run_batched_min_hash(
 
     int num_windows = windows.size();
     if (num_windows == 0) return;
-
-    // DEVICE ALLOCATIONS
+    
+    // device
     Window_batch* d_windows;
     kmer_t* d_kmers;
     int* d_pos;
@@ -506,11 +439,8 @@ void run_batched_min_hash(
     cudaMemcpy(d_Bx, Bx, no_trials * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_Px, Px, no_trials * sizeof(int), cudaMemcpyHostToDevice);
 
-    // kernel launch
     int threads = 256;
     int blocks = (num_windows + threads - 1) / threads;
-
-    // std::cout << "Windows: " << num_windows  << " Blocks: " << blocks << "\n";
 
     window_min_kernel_batch<<<blocks, threads>>>(
         d_kmers,
@@ -569,7 +499,7 @@ void run_batched_min_hash(
 }
 
 
-//  Sliding_window that uses GPU
+// Sliding window GPU
 void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, int *num_subjects,
                      std::vector<MinHashPairs> &initial_sets, int s_index)
 {
@@ -591,10 +521,9 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
   
     for(; ptr[p]!='>' && p<length; p++) { }
 
-    // kmer_t kmer = 0; 
     kmer_t min_kmer = 0;
     kmer_t rev_min_kmer = 0;
-    // kmer_t min_lmer_freq = 0; 
+
     int min_pos = 0;
     int min_tracker = 0;
 
@@ -631,7 +560,6 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
             --p; // step back so assert sees >
         }
         assert(ptr[p] == '>');
-        // Skip to next line
 
 
         // skip header name
@@ -648,9 +576,7 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
         std::string s; 
         int i;
 
-        // s.reserve(seq_len);
         std::string str; 
-        // str.reserve(seq_len);
         int read_len = 0;
         size_t q = seq_start;
 
@@ -660,9 +586,6 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
             s.push_back(convert_to_char(orig, read_len, total_subjects)); // forward complement version
             q++;
             read_len++;
-
-            // std::cout << s << "\n";
-
         }
 
         p = seq_start + read_len;
@@ -711,7 +634,6 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
         #endif
 
                 auto t_rev_start = Clock::now();
-                // reverse(s) etc. (same as original):
                 reverse(s.begin(), s.end());
 
                 #ifdef USE_CUDA
@@ -780,7 +702,7 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
                     }
                 }
         #else
-        // If CUDA not available,  back to original host-side reverse loop
+        //  back to original host-side reverse loop
 
         int length_tracker = 0;
         int itr = 0;
@@ -806,6 +728,7 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
             itr++;
         }
     #endif
+
         auto t_rev_end = Clock::now();
         reverse_time += t_rev_end - t_rev_start;
 
@@ -867,10 +790,6 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
         set_of_distinct_kmers_rev.clear();
         set_of_distinct_pos_rev.clear();
 
-        // ====================
-        // LAUNCH WHEN BATCH FULL
-        // ====================
-
         if ((int)batch_reads.size() == BATCH_SIZE) {
            auto t1 = Clock::now();
 
@@ -895,10 +814,7 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
         
         set_of_distinct_kmers.clear();
         set_of_distinct_kmers.shrink_to_fit();
-        // window_min_sets.clear();
-        // window_min_sets.shrink_to_fit();
 
-        
         set_of_distinct_pos.clear();
         set_of_distinct_pos.shrink_to_fit();
         set_of_distinct_kmers_rev.clear();
@@ -926,27 +842,6 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
         );
     }
 
-
-    print_trial_map_stats(trial_maps);
-
-    size_t mem = memory_usage_trial_maps(trial_maps);
-    std::cout << "Memory used by trial_maps = " << mem << " bytes\n";
-
-    std::cout << "\nTiming \n";
-
-    std::cout << "Total minimizers " << total_k_mer << " s\n";
-    std::cout << "Total minhashes " << count_window << " \n";
-    std::cout << "Maximum  minimizers across read" << max_distinct_kmers << " s\n";
-    std::cout << "Maximum  minhashes across read" << max_distinct_kmers << " s\n";
-
-    std::cout << "Forward minimizers (GPU/host): " << forward_time.count() << " s\n";
-    std::cout << "Reverse minimizers: " << reverse_time.count() << " s\n";
-    std::cout << "Distinct minimizers: " << distinct_time.count() << " s\n";
-    std::cout << "MinHash: " << minhash_time.count()  << " s\n\n";
-
-    std::cout << "MinHash population: " << hash_populate_time.count()  << " s\n\n";
-    std::cout << "MinHash window + minval calculation: " << calculation_time.count()  << " s\n\n";
-
 }
 
 
@@ -960,8 +855,6 @@ void generate_set_of_subjects (char *read_data, size_t length, int s_index, char
 
     int M_for_individual_processes = 0;
     int n_subjects;
-    // Sliding_window - compute MinHash sketches from minimizer k-mers across subjects, with strand direction 
-
     Sliding_window (read_data, length, &M_for_individual_processes, &n_subjects, minhash_from_set_of_subjects, s_index);
 
 }
