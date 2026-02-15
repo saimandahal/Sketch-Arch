@@ -87,8 +87,29 @@ int main(int argc, char **argv) {
     input_read_data sdata = perform_input_reading(inputFileName, 5000000);
     int M = 0;
     int total_subjects = 0;
+    
+    #ifdef MINIMIZER_MODE
+      generate_set_of_subjects_minimizer(
+        sdata.read_data, sdata.read_data_size,
+        sdata.start_index,
+        sdata.read_data, sdata.read_data_size,
+        sdata.start_index,
+        sdata.total, &M, &total_subjects);
+   #endif
 
-    generate_set_of_subjects (sdata.read_data, sdata.read_data_size, sdata.start_index, sdata.read_data, sdata.read_data_size, sdata.start_index, sdata.total, &M, &total_subjects);
+   #ifdef SYNCMER_MODE
+      generate_set_of_subjects_syncmer(
+         sdata.read_data, sdata.read_data_size,
+         sdata.start_index,
+         sdata.read_data, sdata.read_data_size,
+         sdata.start_index,
+         sdata.total, &M, &total_subjects);
+   #endif
+
+
+   
+   //  generate_set_of_subjects_minimizer (sdata.read_data, sdata.read_data_size, sdata.start_index, sdata.read_data, sdata.read_data_size, sdata.start_index, sdata.total, &M, &total_subjects);
+   // //  generate_set_of_subjects_syncmer (sdata.read_data, sdata.read_data_size, sdata.start_index, sdata.read_data, sdata.read_data_size, sdata.start_index, sdata.total, &M, &total_subjects);
 
     double time_l2 = omp_get_wtime();
     std::cout << "Elapsed time (s): " << (time_l2 - time_l1) << std::endl;
