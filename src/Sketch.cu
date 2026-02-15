@@ -1,4 +1,6 @@
 
+// Sketch-Arch 
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -76,7 +78,7 @@ void read_array()
 /* Get minimizer */
 void recalculate_min_kmer (std::string ptr, kmer_t *m_kmer, int *fact, int *pos)
 {
-    kmer_t min_kmer=3074457345618258602, tmp_kmer=0;
+    kmer_t min_kmer=3074457345618258602;
 
     kmer_t kmer=0;
 
@@ -521,19 +523,18 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
   
     for(; ptr[p]!='>' && p<length; p++) { }
 
-    kmer_t min_kmer = 0;
+    // kmer_t min_kmer = 0;
     kmer_t rev_min_kmer = 0;
 
     int min_pos = 0;
     int min_tracker = 0;
 
     int total_k_mer = 0;
-    int total_min_hashes = 0;
 
     using Clock = std::chrono::high_resolution_clock;
     using sec   = std::chrono::duration<double>;
-    sec forward_time{0}, reverse_time{0}, distinct_time{0}, minhash_time{0}, check_time{0};
-    sec calculation_time{0}, hash_check_time{0}, hash_populate_time{0};
+    sec forward_time{0}, reverse_time{0}, distinct_time{0}, minhash_time{0};
+
 
     int count = 0;
 
@@ -541,7 +542,6 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
     trial_maps.resize(no_trials);
 
     int max_distinct_kmers = 0;
-    int count_window = 0;
 
     constexpr int BATCH_SIZE = 100;
 
@@ -574,7 +574,6 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
         if (p + w_size > length) break;
 
         std::string s; 
-        int i;
 
         std::string str; 
         int read_len = 0;
@@ -590,7 +589,6 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
 
         p = seq_start + read_len;
 
-        // GPU: compute forward_set, pos_set, forward_set_tracker for the full read 'str'
         #ifdef USE_CUDA
                 auto gstart = Clock::now();
                 compute_minimizers_on_gpu(str, read_len, w_size, forward_set, pos_set, forward_set_tracker);
@@ -652,6 +650,7 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
                 if ((int)reverse_set.size() != windows || (int)forward_set.size() != windows) {
 
                     std::cout<<"Yes GPU failed";
+                    
                     int length_tracker_local = 0;
                     int itr_local = 0;
                     for(int i=0; i<w_size-1; i++) { length_tracker_local++; }
@@ -693,6 +692,7 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
                                 }
                             }
                         } else {
+
                             if (f_tracker == 1) {
                                 int computed_pos = pos_set[fidx] + read_len - w_size - itr_idx;
                                 kmer_set.push_back(forward_set[fidx]);
@@ -747,12 +747,15 @@ void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, in
             set_of_distinct_kmers.push_back(prev);
             set_of_distinct_pos.push_back(kmer_set_pos[i-1]);
         }
+
         for (int reverse = (int)set_of_distinct_pos.size() - 1; reverse >= 0; --reverse) {
             set_of_distinct_pos_rev.push_back(set_of_distinct_pos[reverse]);
             set_of_distinct_kmers_rev.push_back(set_of_distinct_kmers[reverse]);
         }
+
         kmer_set.clear(); kmer_set.shrink_to_fit();
         kmer_set_pos.clear(); kmer_set_pos.shrink_to_fit();
+
         if (max_set_length < (int)set_of_distinct_kmers.size()) max_set_length = (int)set_of_distinct_kmers.size();
         auto t_dist_end = Clock::now();
         distinct_time += t_dist_end - t_dist_start;
@@ -855,6 +858,7 @@ void generate_set_of_subjects (char *read_data, size_t length, int s_index, char
 
     int M_for_individual_processes = 0;
     int n_subjects;
+
     Sliding_window (read_data, length, &M_for_individual_processes, &n_subjects, minhash_from_set_of_subjects, s_index);
 
 }
