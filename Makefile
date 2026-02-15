@@ -29,19 +29,6 @@ else ifeq ($(MODE),syncmer)
 	SRC = $(wildcard src/*.cu) \
 	      $(wildcard src/syncmer/*.cu)
 
-
-# ifeq ($(MODE),minimizer)
-# 	CFLAGS = -O3 -arch=sm_70 -std=c++14 -DWINDW_SIZE=16 -DLMER_LENGTH=8 -Xcompiler -fopenmp -DUSE_CUDA
-# 	SRC = $(wildcard src/*.cu) \
-# 	      $(wildcard src/minimizer/*.cu)
-# # 	SRC = $(wildcard src/*.cu, src/minimizer/*.cu)
-
-# else ifeq ($(MODE),syncmer)
-# 	CFLAGS = -O3 -arch=sm_70 -std=c++14 -DWINDW_SIZE=11 -DLMER_LENGTH=15 -Xcompiler -fopenmp -DUSE_CUDA
-# 	SRC = $(wildcard src/*.cu) \
-# 	      $(wildcard src/syncmer/*.cu)
-# # 	SRC = $(wildcard src/*.cu, src/syncmer/*.cu)
-
 else
 	$(error Unknown mode "$(mode)", must be "minimizer" or "syncmer")
 endif
