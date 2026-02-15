@@ -1,5 +1,3 @@
-// single_process_io.cpp
-// Replacement for MPI-based input reader — single-process / non-MPI version.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,25 +12,15 @@
 #include <algorithm>
 #include <numeric>
 #include <omp.h>
-#include "../includes/JEM.h"   // keeps your input_read_data type and other declarations
+#include "../includes/JEM.h"  
 
-// preserved global timing variables (now measured locally)
+
 double file_open_time=0.0, global_file_open_time=0.0;
 double file_read_time=0.0, global_file_read_time=0.0;
 double file_copy_time=0.0, global_file_copy_time=0.0;
 double file_close_time=0.0, global_file_close_time=0.0;
 double input_process_time=0.0, global_input_process_time=0.0;
 
-/*
- * DivideReads - single-process variant
- * Reads entire file into memory, counts records starting with '>'
- * Returns a malloc'd char* which the caller must free when appropriate.
- *
- * Parameters:
- *   filename  - name of input file
- *   nlines    - output: number of reads (lines starting with '>')
- *   data_size - output: size in bytes of returned buffer
- */
 char* DivideReads(const std::string &filename, uint64_t *nlines, size_t *data_size)
 {
     using clock = std::chrono::steady_clock;
@@ -46,7 +34,6 @@ char* DivideReads(const std::string &filename, uint64_t *nlines, size_t *data_si
     }
     auto t_open = clock::now();
 
-    // determine file size
     if (fseek(f, 0, SEEK_END) != 0) {
         fprintf(stderr, "fseek failed for file: %s\n", filename.c_str());
         fclose(f);
@@ -60,7 +47,6 @@ char* DivideReads(const std::string &filename, uint64_t *nlines, size_t *data_si
     }
     rewind(f);
 
-    // allocate buffer (add one extra byte for null-terminator)
     size_t localsize = (size_t)filesize;
     char *data = (char*) malloc(localsize + 1);
     if (!data) {
@@ -87,21 +73,17 @@ char* DivideReads(const std::string &filename, uint64_t *nlines, size_t *data_si
     data[read_total] = '\0'; // null-terminate
     auto t_read = clock::now();
 
-    // count number of reads (lines starting with '>')
     uint64_t lines = 0;
     for (size_t i = 0; i < read_total; ++i) {
         if (data[i] == '>') ++lines;
     }
 
-    // close file
     fclose(f);
     auto t_close = clock::now();
 
-    // set outputs
     *nlines = lines;
     *data_size = read_total;
 
-    // fill timing globals (single-process; global_* mirror local values)
     file_open_time = std::chrono::duration<double>(t_open - t_start).count();
     file_read_time = std::chrono::duration<double>(t_read - t_open).count();
     file_copy_time = 0.0; // not applicable in this single read
@@ -114,7 +96,6 @@ char* DivideReads(const std::string &filename, uint64_t *nlines, size_t *data_si
     global_file_close_time = file_close_time;
     global_input_process_time = input_process_time;
 
-    // print timings (similar messages as MPI version; single-process)
     fprintf(stderr, "File open time (secs): %f\n", file_open_time);
     fprintf(stderr, "File read time (secs): %f\n", file_read_time);
     fprintf(stderr, "File close time (secs): %f\n", file_close_time);
@@ -122,43 +103,6 @@ char* DivideReads(const std::string &filename, uint64_t *nlines, size_t *data_si
 
     return data;
 }
-
-// input_read_data perform_input_reading (const std::string &fileName, int read_length)
-
-
-// {
-//     input_read_data input_rdata;
-//     input_rdata.read_data = nullptr;
-//     input_rdata.read_data_size = 0;
-//     input_rdata.start_index = 0;
-//     input_rdata.local_count = 0;
-//     input_rdata.total = 0;
-
-//     double start_t = 0.0;
-
-//     // read file into memory
-//     uint64_t nlines = 0;
-//     size_t data_size = 0;
-
-//     char *buffer = DivideReads(fileName, &nlines, &data_size);
-//     if (!buffer) {
-//         fprintf(stderr, "Failed to read file: %s\n", fileName.c_str());
-//         return input_rdata;
-//     }
-
-//     // Populate input_rdata fields
-//     input_rdata.read_data = buffer;
-//     input_rdata.read_data_size = data_size;
-//     input_rdata.start_index = 0;     // single-process: start at 0
-//     input_rdata.local_count = nlines;
-//     input_rdata.total = nlines;
-
-//     fprintf(stderr, "Total number of reads: %lu\n", (unsigned long) nlines);
-//     fprintf(stderr, "Completed Reading the input dataset\n");
-
-//     return input_rdata;
-// }
-
 
 input_read_data perform_input_reading (const std::string &fileName, int read_length)
 {
@@ -169,7 +113,6 @@ input_read_data perform_input_reading (const std::string &fileName, int read_len
     input_rdata.local_count = 0;
     input_rdata.total = 0;
 
-    // read file into memory (whole file)
     uint64_t nlines = 0;
     size_t data_size = 0;
     char *buffer = DivideReads(fileName, &nlines, &data_size);
@@ -178,7 +121,6 @@ input_read_data perform_input_reading (const std::string &fileName, int read_len
         return input_rdata;
     }
 
-    // --- Build vector of offsets where each read starts (positions of '>') ---
     std::vector<size_t> starts;
     starts.reserve((size_t)nlines);
     for (size_t i = 0; i < data_size; ++i) {
@@ -186,41 +128,34 @@ input_read_data perform_input_reading (const std::string &fileName, int read_len
     }
     // sanity check
     if (starts.empty()) {
-        // nothing to return; keep original buffer ownership to caller (or free and return empty)
+
         free(buffer);
         fprintf(stderr, "No reads (no '>' found) in file: %s\n", fileName.c_str());
         return input_rdata;
     }
 
-    // --- Partitioning parameters ---
-    const int parts = 1;          // divide into 4 parts; change if you want other granularity
-    const int selected_part = 0;  // which part to return: 0..parts-1 (0==first quarter)
-                                  // change this to 1,2,3 to get other quarters
+    const int parts = 1;          // divide into n parts
+    const int selected_part = 0; 
 
-    // clamp selected_part to valid range
     int sel = selected_part;
     if (sel < 0) sel = 0;
     if (sel >= parts) sel = parts - 1;
 
-    // compute read indices for the selected partition
     uint64_t reads_per_part = (uint64_t) (nlines / parts);
     uint64_t start_read_idx = (uint64_t) sel * reads_per_part;
     uint64_t end_read_idx = (sel == parts - 1) ? nlines : start_read_idx + reads_per_part;
     if (end_read_idx > nlines) end_read_idx = nlines;
 
-    // determine byte offsets in the buffer for copying
     size_t start_byte = starts[(size_t)start_read_idx];
     size_t end_byte;
     if (end_read_idx < starts.size()) {
         end_byte = starts[(size_t)end_read_idx];
     } else {
-        // last partition goes to end of file
         end_byte = data_size;
     }
 
     size_t part_size = (end_byte > start_byte) ? (end_byte - start_byte) : 0;
 
-    // Copy selected partition into a new buffer that we'll return
     char *part_buf = nullptr;
     if (part_size > 0) {
         part_buf = (char*) malloc(part_size + 1); // +1 for null-terminator
@@ -229,19 +164,16 @@ input_read_data perform_input_reading (const std::string &fileName, int read_len
             free(buffer);
             return input_rdata;
         }
-        // measure copy time if you want (optional)
+        // measure copy time
         memcpy(part_buf, buffer + start_byte, part_size);
         part_buf[part_size] = '\0';
     } else {
-        // nothing in this partition (shouldn't usually happen)
         part_buf = (char*) malloc(1);
         part_buf[0] = '\0';
     }
 
-    // free full-file buffer (caller will free the returned partition buffer)
     free(buffer);
 
-    // populate input_rdata with partition info
     input_rdata.read_data = part_buf;
     input_rdata.read_data_size = part_size;
     input_rdata.start_index = 0; // start of this returned buffer
