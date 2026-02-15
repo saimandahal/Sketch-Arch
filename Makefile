@@ -8,17 +8,47 @@ CXXFLAGS = -O3 -std=c++14
 MODE ?= minimizer
 
 # Default flags for each mode
+
 ifeq ($(MODE),minimizer)
-	CFLAGS = -O3 -arch=sm_70 -std=c++14 -DWINDW_SIZE=16 -DLMER_LENGTH=8 -Xcompiler -fopenmp -DUSE_CUDA
+
+	CFLAGS = -O3 -arch=sm_70 -std=c++14 \
+	         -DWINDW_SIZE=16 -DLMER_LENGTH=8 \
+	         -DMINIMIZER_MODE \
+	         -Xcompiler -fopenmp -DUSE_CUDA
+
+	SRC = $(wildcard src/*.cu) \
+	      $(wildcard src/minimizer/*.cu)
+
 else ifeq ($(MODE),syncmer)
-	CFLAGS = -O3 -arch=sm_70 -std=c++14 -DWINDW_SIZE=11 -DLMER_LENGTH=15 -Xcompiler -fopenmp -DUSE_CUDA
+
+	CFLAGS = -O3 -arch=sm_70 -std=c++14 \
+	         -DWINDW_SIZE=11 -DLMER_LENGTH=15 \
+	         -DSYNCMER_MODE \
+	         -Xcompiler -fopenmp -DUSE_CUDA
+
+	SRC = $(wildcard src/*.cu) \
+	      $(wildcard src/syncmer/*.cu)
+
+
+# ifeq ($(MODE),minimizer)
+# 	CFLAGS = -O3 -arch=sm_70 -std=c++14 -DWINDW_SIZE=16 -DLMER_LENGTH=8 -Xcompiler -fopenmp -DUSE_CUDA
+# 	SRC = $(wildcard src/*.cu) \
+# 	      $(wildcard src/minimizer/*.cu)
+# # 	SRC = $(wildcard src/*.cu, src/minimizer/*.cu)
+
+# else ifeq ($(MODE),syncmer)
+# 	CFLAGS = -O3 -arch=sm_70 -std=c++14 -DWINDW_SIZE=11 -DLMER_LENGTH=15 -Xcompiler -fopenmp -DUSE_CUDA
+# 	SRC = $(wildcard src/*.cu) \
+# 	      $(wildcard src/syncmer/*.cu)
+# # 	SRC = $(wildcard src/*.cu, src/syncmer/*.cu)
+
 else
-	$(error Unknown mode "$(MODE)", must be "minimizer" or "syncmer")
+	$(error Unknown mode "$(mode)", must be "minimizer" or "syncmer")
 endif
 
 TARGET = sketch_arch
 
-SRC = $(wildcard src/*.cu)
+# SRC = $(wildcard src/*.cu)
 HDR = $(wildcard includes/*.h)
 
 # Build target
