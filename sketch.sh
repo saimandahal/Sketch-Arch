@@ -5,7 +5,7 @@ set -e
 # chmod +x sketch.sh
 # ./sketch_gpu_run.sh syncmer
 
-# deafult - minimizer
+# default - minimizer
 MODE=${1:-minimizer}
 
 if [[ "$MODE" == "minimizer" ]]; then
