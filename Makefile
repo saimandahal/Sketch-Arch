@@ -1,50 +1,35 @@
-CC := nvcc
-CXXFLAGS := -O3 -std=c++14
+# Compiler
+CC = nvcc
+CXXFLAGS = -O3 -std=c++14
 
-# default values for device and mode
-device ?= gpu        
-mode   ?= minimizer  
+# make mode=minimizer
 
-COMMON_FLAGS := -O3 -std=c++14 -Xcompiler -fopenmp
+# User can specify mode: minimizer or syncmer
+MODE ?= minimizer
 
-# mode
-ifeq ($(mode),minimizer)
-    WINDOW_SIZE := 16
-    LMER_LENGTH := 8
-else ifeq ($(mode),syncmer)
-    WINDOW_SIZE := 11
-    LMER_LENGTH := 15
+# Default flags for each mode
+ifeq ($(MODE),minimizer)
+	CFLAGS = -O3 -arch=sm_70 -std=c++14 -DWINDW_SIZE=16 -DLMER_LENGTH=8 -Xcompiler -fopenmp -DUSE_CUDA
+else ifeq ($(MODE),syncmer)
+	CFLAGS = -O3 -arch=sm_70 -std=c++14 -DWINDW_SIZE=11 -DLMER_LENGTH=15 -Xcompiler -fopenmp -DUSE_CUDA
 else
-    $(error Invalid mode: $(mode))
+	$(error Unknown mode "$(MODE)", must be "minimizer" or "syncmer")
 endif
-
-# device
-ifeq ($(device),gpu)
-    DEVICE_FLAGS := -arch=sm_70 -DUSE_CUDA
-else ifeq ($(device),cpu)
-    DEVICE_FLAGS :=
-else
-    $(error Invalid device: $(device))
-endif
-
-CFLAGS := $(COMMON_FLAGS) \
-          -DWINDW_SIZE=$(WINDOW_SIZE) \
-          -DLMER_LENGTH=$(LMER_LENGTH) \
-          $(DEVICE_FLAGS)
-
-
 
 TARGET = sketch_arch
 
 SRC = $(wildcard src/*.cu)
 HDR = $(wildcard includes/*.h)
 
+# Build target
 $(TARGET): $(SRC) $(HDR)
 	$(CC) $(CFLAGS) -Iincludes -o $(TARGET) $(SRC)
 
+# Run target: passes mode as first argument to executable
 run: $(TARGET)
-	./$(TARGET) -s subject.fasta -q query.fasta -l 100
+	./$(TARGET) $(MODE)
 
+# Clean
 clean:
 	rm -f $(TARGET)
 
