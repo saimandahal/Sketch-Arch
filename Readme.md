@@ -17,13 +17,14 @@ nvcc 11.7
 ## Build
 1. **Run:**
 
-   ```bash
-   make
+   ```bash  
+   make mode=minimizer/syncmer
+
 
 ## Execute
 1. **Run:**
 
    ```bash
-   ./script.sh
+   ./sketch_arch.sh minimizer/syncmer
    
 
