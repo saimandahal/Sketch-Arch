@@ -1,6 +1,3 @@
-// JEM.h — MPI removed, single-process read API
-// JEM-Mapper: A C++ implementation for Jaccard Estimate MinHash-based sequence-to-sequence mapping
-// (authors & license header omitted for brevity — keep your original header text if desired)
 
 #ifndef JEM_H
 #define JEM_H
@@ -9,7 +6,7 @@
 #include <vector>
 #include <iostream>
 #include <unordered_map>
-#include <queue>          // std::priority_queue
+#include <queue>   
 #include <string>
 #include <assert.h>
 #include <cstring>
@@ -28,7 +25,6 @@
 #include <omp.h>
 #include <cstdint>
 
-// #define KMER_LENGTH                    (WINDW_SIZE+1)
 #define KMER_LENGTH                    (WINDW_SIZE)
 
 #define LMER_SIZE                      (pow(4, LMER_LENGTH))
@@ -48,7 +44,7 @@ typedef uint64_t lmer_t;
 #define MN_MASK             ((~0UL)) >> ((sizeof(kmer_t)*8) - (2*MN_LENGTH))
 #define SUCC_MASK           ((~0UL)) >> ((sizeof(kmer_t)*8) - (2*(KMER_LENGTH-1)))
 
-extern int rank, size;  // keep for compatibility; set these in your single-process main (rank=0,size=1)
+extern int rank, size; 
 
 template<typename T>
 inline bool
@@ -267,11 +263,6 @@ inline long hash31(long long a, long long b, long long x)
   return(lresult);
 }
 
-/* ------------------------
-   Function declarations
-   ------------------------ */
-
-/* hashing, utilities */
 int hash_fcn (const char* word, unsigned M);
 void parse_alphabet_file (FILE * fp);
 void free_reads (int num_reads);
@@ -289,11 +280,9 @@ char* DivideReads(const std::string &filename,
                   size_t *data_size);
 
 input_read_data perform_input_reading (const std::string &fileName, int read_length);
-// input_read_data perform_input_reading(const std::string &fileName, int read_length)
-/* legacy / alternative variant — kept but converted to single-process signature */
+
 input_read_data perform_input_readingC (const std::string &fileName, int read_length);
 
-/* other previously-declared functions — left intact */
 void Sliding_window_l (const char *ptr, size_t length);
 void Sliding_window (char *ptr, size_t length, int *M_for_individual_process, int *num_subjects,
                      std::vector<MinHashPairs> &initial_sets, std::vector<int> &subject_size, int s_index);
@@ -309,7 +298,10 @@ std::string readFileIntoString(const std::string& path);
 long long get_file_size(std::string filename);
 void read_array();
 void get_hash_value(kmer_t **A1, int M, kmer_t **Prefix);
-void generate_set_of_subjects (char *ptr, size_t length, int s_index,char *read_data, size_t r_length, int start_index, int total_q, int *M_final, int *num_subjects);
+
+void generate_set_of_subjects_minimizer (char *ptr, size_t length, int s_index,char *read_data, size_t r_length, int start_index, int total_q, int *M_final, int *num_subjects);
+void generate_set_of_subjects_syncmer (char *ptr, size_t length, int s_index,char *read_data, size_t r_length, int start_index, int total_q, int *M_final, int *num_subjects);
+
 void genereate_hash_table(int M, int total_subjects, kmer_t **Ag_Hash_Table);
 void get_hash_value_queires(std::vector<std::vector<kmer_t>> &modified_sets, kmer_t **A1);
 void Sliding_window_queires (char *ptr, size_t length, int *num_queries,
@@ -319,4 +311,4 @@ void generate_modified_set_queries(int M, std::vector<std::vector<kmer_t>> &prev
 char convert_to_char (char given_char);
 void prefix_val(kmer_t **A1, int M);
 
-#endif // JEM_H
+#endif
